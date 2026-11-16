@@ -208,7 +208,7 @@ impl Router {
         request: RouterRequest,
         origin: StreamOrigin,
         failure: AttemptError,
-    ) -> Result<super::RouterResponse<H::Response>, CallError<H::Failure>> {
+    ) -> Result<super::RouterResponse<H::Response>, Box<CallError<H::Failure>>> {
         self.live()?;
         let call = Call::new(&self.core, host);
         let snapshot = self.core.snapshot.load_full();
@@ -248,10 +248,10 @@ impl Router {
         request: RouterRequest,
         origin: StreamOrigin,
         failure: AttemptError,
-    ) -> Result<super::RouterResponse<H::Response>, CallError<H::Failure>> {
+    ) -> Result<super::RouterResponse<H::Response>, Box<CallError<H::Failure>>> {
         self.retry_in_group(host, op, request, origin, failure)
             .await
-            .map_err(|spent| *spent.ended)
+            .map_err(|spent| spent.ended)
     }
 
     async fn retry_in_group<H: RouterHost>(
@@ -264,7 +264,7 @@ impl Router {
     ) -> Result<super::RouterResponse<H::Response>, Spent<H::Failure>> {
         let mut committed_budget = origin.committed_budget;
         self.live().map_err(|error| Spent {
-            ended: Box::new(error.into()),
+            ended: error.into(),
             committed_budget,
         })?;
         let call = Call::new(&self.core, host);
@@ -356,7 +356,7 @@ impl Router {
                     }
                     other => {
                         return Err(Spent {
-                            ended: Box::new(call.ended(other)),
+                            ended: call.ended(other),
                             committed_budget,
                         });
                     }
@@ -364,7 +364,7 @@ impl Router {
             }
         }
         Err(Spent {
-            ended: Box::new(call.ended(Error::Attempt(last))),
+            ended: call.ended(Error::Attempt(last)),
             committed_budget,
         })
     }
@@ -428,7 +428,7 @@ impl TakeOver<'_> {
                 committed_budget,
             }) => (
                 ended.error.attempt().cloned().unwrap_or(failure),
-                ended.raised,
+                ended.raised.map(|raised| raised.failure),
                 committed_budget,
             ),
         };
@@ -440,7 +440,7 @@ impl TakeOver<'_> {
                 ..answer
             })
             .map_err(|ended| Unanswered {
-                raised: ended.raised.or(raised),
+                raised: ended.raised.map(|raised| raised.failure).or(raised),
             })
     }
 }
@@ -462,14 +462,9 @@ fn plain_retry_budget(
         .deployment_id
         .as_deref()
         .and_then(|id| snapshot.registry.deployment(id));
-    let configured = deployment.and_then(|d| match d.raw_params.get("num_retries") {
-        Some(serde_json::Value::Number(n)) => n.as_u64().and_then(|n| u32::try_from(n).ok()),
-        Some(serde_json::Value::String(s)) if s.chars().all(|c| c.is_ascii_digit()) => {
-            s.parse().ok()
-        }
-        _ => None,
-    });
-    configured.unwrap_or(snapshot.settings.num_retries)
+    deployment
+        .and_then(|deployment| deployment.num_retries())
+        .unwrap_or(snapshot.settings.num_retries)
 }
 
 /// The retry policy for the request's model group (`_anthropic_messages_resolved_retry_policy`),

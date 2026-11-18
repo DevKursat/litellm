@@ -1,6 +1,7 @@
 import json
 import logging
 import sys
+from pathlib import Path
 from typing import Final
 
 import pytest
@@ -56,11 +57,29 @@ def test_migrate_diff_stops_at_its_budget_and_takes_its_process_tree_with_it(fak
     monkeypatch.setenv("FAKE_PRISMA_HANG_FIRST", "1")
 
     assert check_prisma_schema_diff_helper("postgresql://u:p@localhost:9/x") == (False, [])
-    assert fake_prisma_cli.calls == [
-        ["migrate", "diff", "--from-url", "postgresql://u:p@localhost:9/x",
-         "--to-schema-datamodel", "./schema.prisma", "--script"]
-    ]
+    [call] = fake_prisma_cli.calls
+    assert call[:5] == ["migrate", "diff", "--from-url", "postgresql://u:p@localhost:9/x", "--to-schema-datamodel"]
     assert fake_prisma_cli.grandchild_is_gone(within_seconds=5)
+
+
+def test_migrate_diff_reads_the_proxy_schema_from_any_working_directory(fake_prisma_cli, tmp_path, monkeypatch):
+    """
+    The diff named ./schema.prisma, which resolves against the working directory. Once the
+    repo-root copy moved under litellm/, every boot outside a directory holding one failed to
+    read the schema, so the out-of-sync warning could never fire.
+    """
+    from litellm.proxy.db.check_migration import check_prisma_schema_diff_helper
+
+    unrelated_dir = tmp_path / "unrelated"
+    unrelated_dir.mkdir()
+    monkeypatch.chdir(unrelated_dir)
+
+    check_prisma_schema_diff_helper("postgresql://u:p@localhost:9/x")
+
+    [call] = fake_prisma_cli.calls
+    schema = Path(call[call.index("--to-schema-datamodel") + 1])
+    assert schema.is_absolute()
+    assert "model LiteLLM_VerificationToken" in schema.read_text()
 
 
 def test_migrate_diff_without_the_prisma_runner_skips_instead_of_crashing_boot(monkeypatch):

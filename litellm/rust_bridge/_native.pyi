@@ -788,9 +788,12 @@ class RustIdentity:
 
     @final
     class MappedJwtKey(RustIdentity):
-        __match_args__: tuple[
-            Literal["claims"], Literal["end_user_id"], Literal["user_email"], Literal["context"]
-        ] = ("claims", "end_user_id", "user_email", "context")
+        __match_args__: tuple[Literal["claims"], Literal["end_user_id"], Literal["user_email"], Literal["context"]] = (
+            "claims",
+            "end_user_id",
+            "user_email",
+            "context",
+        )
         def __new__(
             cls,
             claims: dict[str, object],
@@ -1751,6 +1754,7 @@ def auth_route_matches_denied(route: str, denied_route: str) -> bool: ...
 def auth_first_denied_route(forwarded_routes: Sequence[str], denied_sources: Sequence[object]) -> str | None: ...
 def auth_jwt_team_routes_grant(route: str, team_allowed_routes: object) -> bool: ...
 def auth_allowed_routes_grant(route: str, *, key: object, team: object) -> bool: ...
+
 @final
 class NativeAuthCache:
     def __new__(
@@ -1913,6 +1917,17 @@ class RustModelAccessGroupRepository:
     def __new__(cls, database: NativeDatabase) -> RustModelAccessGroupRepository: ...
     def names(self, limit: int) -> Future[list[str]]: ...
     def budgets(self, names: Sequence[str]) -> Future[list[tuple[str, float, float | None, bool]]]: ...
+
+@final
+class RustSpendLog:
+    def __new__(
+        cls,
+        writer: RustSpendLogWriter,
+        spend_counters: NativeSpendCounters,
+        token_redactor: NativeTokenRedactor,
+        retention: tuple[Sequence[str] | None, Sequence[str] | None] | None = None,
+    ) -> RustSpendLog: ...
+    def callback(self) -> RustHandle: ...
 
 @final
 class NativeTokenRedactor:
@@ -2244,6 +2259,7 @@ __all__ = [
     "RustMappedClaims",
     "RustModelAccessGroupRepository",
     "RustPlan",
+    "RustSpendLog",
     "RustSpendLogRowBuilder",
     "RustSpendLogWriter",
     "RustTeamGrant",

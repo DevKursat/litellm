@@ -2066,3 +2066,28 @@ async def test_calls_after_a_health_check_still_use_the_global_model_fallbacks(
     response: Final = await litellm.acompletion(**deployment, messages=[{"role": "user", "content": "hi"}])
 
     assert response.choices[0].message.content == "ok"
+
+
+@pytest.mark.timeout(30, method="thread")
+@pytest.mark.asyncio
+async def test_a_responses_probe_is_bounded_by_the_health_check_max_tokens(
+    respx_mock: respx.MockRouter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(litellm, "disable_aiohttp_transport", True)
+    deployment: Final = respx_mock.post("https://deployment.example/v1/responses").mock(
+        return_value=httpx.Response(404, json={"error": {"message": "model unavailable", "type": "not_found"}})
+    )
+
+    _ = await ahealth_check(
+        {
+            "model": "openai/probe-model",
+            "api_base": "https://deployment.example/v1",
+            "api_key": "sk-test",
+            "max_tokens": 37,
+        },
+        mode="responses",
+    )
+
+    sent: Final = json.loads(deployment.calls.last.request.content)
+    assert sent["max_output_tokens"] == 37
+    assert "max_tokens" not in sent

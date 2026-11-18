@@ -1878,6 +1878,24 @@ class NativeDatabase:
     def close(self) -> Future[None]: ...
 
 @final
+class RustSpendLogWriter:
+    def __new__(
+        cls,
+        database: NativeDatabase,
+        *,
+        queue_max_bytes: int,
+        write_batch_max_bytes: int,
+        write_batch_max_rows: int,
+        on_flush_request: Callable[[], None],
+    ) -> RustSpendLogWriter: ...
+    def enqueue(self, rows: Sequence[str], at_head: bool, max_bytes: int) -> int: ...
+    def flush(
+        self, limit: int, retention: tuple[Sequence[str] | None, Sequence[str] | None] | None = None
+    ) -> Future[list[dict[str, object]]]: ...
+    def dequeue(self, limit: int) -> list[str]: ...
+    def __len__(self) -> int: ...
+
+@final
 class RustKeyRepository:
     def __new__(cls, database: NativeDatabase) -> RustKeyRepository: ...
     def find(self, token: str, *, use_writer: bool = False) -> Future[str | None]: ...
@@ -2227,6 +2245,7 @@ __all__ = [
     "RustModelAccessGroupRepository",
     "RustPlan",
     "RustSpendLogRowBuilder",
+    "RustSpendLogWriter",
     "RustTeamGrant",
     "RustUpstreamError",
     "SpendRead",
